@@ -183,8 +183,8 @@ defmodule Ahoy.UI.App do
   defp handle_input("/msg " <> rest, username, client_pid) do
     case String.split(rest, " ", parts: 2) do
       [to_user, message] ->
-        # TODO: Send direct message via client
-        IO.puts("Sending DM to #{to_user}: #{message}")
+        Ahoy.Core.Client.send_direct_message(client_pid, to_user, message)
+        IO.puts("Sent DM to #{to_user}")
       
       _ ->
         IO.puts("Usage: /msg username message")
