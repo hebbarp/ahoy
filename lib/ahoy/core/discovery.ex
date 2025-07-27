@@ -33,10 +33,10 @@ defmodule Ahoy.Core.Discovery do
   # Server callbacks
   @impl true
   def init(_args) do
-    # Get our own node information
-    own_node = Node.self()
+    # Note: Node.self() might be :nonode@nohost during init
+    # We'll get the real node info when broadcasting
     own_info = %{
-      node: own_node,
+      node: :nonode@nohost, # Will be updated during broadcast
       timestamp: System.system_time(:second),
       version: "1.0.0"
     }
@@ -59,7 +59,7 @@ defmodule Ahoy.Core.Discovery do
         timer_ref = Process.send_after(self(), :broadcast_discovery, 1000)
         new_state = %{state | timer_ref: timer_ref}
 
-        Logger.info("Discovery started on #{own_node}, broadcasting on port #{@broadcast_port}")
+        Logger.info("Discovery started on #{Node.self()}, broadcasting on port #{@broadcast_port}")
         {:ok, new_state}
 
       {:error, reason} ->
@@ -76,8 +76,8 @@ defmodule Ahoy.Core.Discovery do
 
   @impl true
   def handle_cast(:force_discovery, state) do
-    broadcast_discovery(state)
-    {:noreply, state}
+    new_state = broadcast_discovery(state)
+    {:noreply, new_state}
   end
 
   def handle_cast({:connect_to_node, node_name}, state) do
@@ -95,11 +95,11 @@ defmodule Ahoy.Core.Discovery do
   @impl true
   def handle_info(:broadcast_discovery, state) do
     # Send discovery broadcast
-    broadcast_discovery(state)
+    updated_state = broadcast_discovery(state)
     
     # Schedule next broadcast
     timer_ref = Process.send_after(self(), :broadcast_discovery, @discovery_interval)
-    new_state = %{state | timer_ref: timer_ref}
+    new_state = %{updated_state | timer_ref: timer_ref}
     
     {:noreply, new_state}
   end
@@ -143,15 +143,25 @@ defmodule Ahoy.Core.Discovery do
 
   # Private functions
   defp broadcast_discovery(state) do
-    message = encode_discovery_message(state.own_info)
+    # Get current node info (in case it changed since init)
+    current_info = %{
+      node: Node.self(),
+      timestamp: System.system_time(:second),
+      version: "1.0.0"
+    }
+    
+    message = encode_discovery_message(current_info)
     
     case :gen_udp.send(state.udp_socket, @broadcast_address, @broadcast_port, message) do
       :ok ->
-        Logger.debug("Sent discovery broadcast")
+        Logger.debug("Sent discovery broadcast for #{current_info.node}")
       
       {:error, reason} ->
         Logger.warn("Failed to send discovery broadcast: #{inspect(reason)}")
     end
+    
+    # Update state with current node info
+    %{state | own_info: current_info}
   end
 
   defp handle_discovery_message(remote_info, ip, state) do
