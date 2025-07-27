@@ -45,32 +45,22 @@ defmodule Ahoy.Core.Client do
 
   # Server callbacks
   @impl true
-  def init({username, ui_pid}) do
+  def init({username, parent_pid}) do
     # Register this client in the local registry
     {:ok, _} = Registry.register(Ahoy.ClientRegistry, username, self())
     
     # Register user globally across all nodes
     :ok = Ahoy.Core.Registry.register_user(username)
     
-    # Monitor the UI process
-    Process.monitor(ui_pid)
-    
     state = %__MODULE__{
       username: username,
-      ui_pid: ui_pid,
+      ui_pid: nil,  # Will be set when UI sends {:ui_pid, pid}
       current_channel: nil,
       channels: [],
       message_history: []
     }
     
     Logger.info("Client started for user: #{username}")
-    
-    # Send welcome message to UI
-    send_to_ui(ui_pid, %{
-      type: :system_message,
-      message: "Welcome to Ahoy, #{username}! Type /help for commands.",
-      timestamp: DateTime.utc_now()
-    })
     
     {:ok, state}
   end
@@ -195,15 +185,35 @@ defmodule Ahoy.Core.Client do
     {:stop, :normal, state}
   end
 
-  # Handle incoming messages from Router
+  # Handle UI PID from main process
   @impl true
+  def handle_info({:ui_pid, ui_pid}, state) do
+    # Monitor the UI process
+    Process.monitor(ui_pid)
+    
+    # Update state with UI PID
+    new_state = %{state | ui_pid: ui_pid}
+    
+    # Send welcome message to UI
+    send_to_ui(ui_pid, %{
+      type: :system_message,
+      message: "Welcome to Ahoy, #{state.username}! Type /help for commands.",
+      timestamp: DateTime.utc_now()
+    })
+    
+    {:noreply, new_state}
+  end
+
+  # Handle incoming messages from Router
   def handle_info({:message, message}, state) do
     # Add to message history
     new_history = [message | state.message_history] |> Enum.take(100)
     new_state = %{state | message_history: new_history}
     
-    # Forward to UI
-    send_to_ui(state.ui_pid, message)
+    # Forward to UI if UI PID is set
+    if state.ui_pid do
+      send_to_ui(state.ui_pid, message)
+    end
     
     {:noreply, new_state}
   end
