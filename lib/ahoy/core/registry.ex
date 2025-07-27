@@ -129,6 +129,19 @@ defmodule Ahoy.Core.Registry do
   @impl true
   def handle_info({:nodeup, node}, state) do
     Logger.info("Node connected: #{node}")
+    
+    # Send all existing users to the newly connected node
+    state.users
+    |> Enum.each(fn {username, user_info} ->
+      send({__MODULE__, node}, {:user_online, username, user_info.node})
+      
+      # Also send channel memberships
+      user_info.channels
+      |> Enum.each(fn channel ->
+        send({__MODULE__, node}, {:join_channel, username, channel})
+      end)
+    end)
+    
     {:noreply, state}
   end
 
