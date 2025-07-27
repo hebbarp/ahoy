@@ -19,17 +19,19 @@ defmodule Ahoy.UI.App do
   end
 
   defp input_loop(username, client_pid) do
-    # Start message receiver in parallel
-    spawn_link(fn -> message_receiver_loop() end)
+    # Start input task
+    input_task = Task.async(fn -> 
+      input_loop_main(username, client_pid)
+    end)
     
-    # Main input loop
-    input_loop_main(username, client_pid)
+    # Message receiving loop
+    message_loop(input_task)
   end
 
   defp input_loop_main(username, client_pid) do
     case IO.gets("#{username}> ") do
       :eof ->
-        IO.puts("\nGoodbye!")
+        send(self(), :quit)
         
       {:error, reason} ->
         IO.puts("Input error: #{inspect(reason)}")
@@ -40,8 +42,7 @@ defmodule Ahoy.UI.App do
         
         case handle_input(trimmed, username, client_pid) do
           :quit -> 
-            IO.puts("Goodbye!")
-            System.halt(0)
+            send(self(), :quit)
           
           :continue -> 
             input_loop_main(username, client_pid)
@@ -49,16 +50,21 @@ defmodule Ahoy.UI.App do
     end
   end
 
-  # Handle incoming messages from Client
-  defp message_receiver_loop() do
+  # Main message receiving loop
+  defp message_loop(input_task) do
     receive do
       {:ui_message, message} ->
         display_message(message)
-        message_receiver_loop()
+        message_loop(input_task)
+      
+      :quit ->
+        Task.shutdown(input_task)
+        IO.puts("Goodbye!")
+        System.halt(0)
       
       other ->
         IO.puts("Unknown UI message: #{inspect(other)}")
-        message_receiver_loop()
+        message_loop(input_task)
     end
   end
 
