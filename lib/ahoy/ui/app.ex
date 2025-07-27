@@ -7,6 +7,9 @@ defmodule Ahoy.UI.App do
   require Logger
 
   def start(username, client_pid, _opts \\ []) do
+    # Store username in process dictionary for display_message
+    Process.put(:username, username)
+    
     IO.puts("\n=== Ahoy Chat - #{username} ===")
     IO.puts("Type /help for commands, /quit to exit")
     IO.puts("Connecting to network...\n")
@@ -16,13 +19,21 @@ defmodule Ahoy.UI.App do
   end
 
   defp input_loop(username, client_pid) do
+    # Start message receiver in parallel
+    spawn_link(fn -> message_receiver_loop() end)
+    
+    # Main input loop
+    input_loop_main(username, client_pid)
+  end
+
+  defp input_loop_main(username, client_pid) do
     case IO.gets("#{username}> ") do
       :eof ->
         IO.puts("\nGoodbye!")
         
       {:error, reason} ->
         IO.puts("Input error: #{inspect(reason)}")
-        input_loop(username, client_pid)
+        input_loop_main(username, client_pid)
         
       input when is_binary(input) ->
         trimmed = String.trim(input)
@@ -33,8 +44,47 @@ defmodule Ahoy.UI.App do
             System.halt(0)
           
           :continue -> 
-            input_loop(username, client_pid)
+            input_loop_main(username, client_pid)
         end
+    end
+  end
+
+  # Handle incoming messages from Client
+  defp message_receiver_loop() do
+    receive do
+      {:ui_message, message} ->
+        display_message(message)
+        message_receiver_loop()
+      
+      other ->
+        IO.puts("Unknown UI message: #{inspect(other)}")
+        message_receiver_loop()
+    end
+  end
+
+  defp display_message(message) do
+    case message do
+      %{type: :channel_message, from: from, channel: channel, message: msg, timestamp: ts} ->
+        time = format_timestamp(ts)
+        IO.puts("\r[#{time}] #{channel} <#{from}> #{msg}")
+        IO.write("#{Process.get(:username, "user")}> ")
+      
+      %{type: :direct_message, from: from, message: msg, timestamp: ts} ->
+        time = format_timestamp(ts)
+        IO.puts("\r[#{time}] DM from #{from}: #{msg}")
+        IO.write("#{Process.get(:username, "user")}> ")
+      
+      %{type: :system_message, message: msg} ->
+        IO.puts("\r* #{msg}")
+        IO.write("#{Process.get(:username, "user")}> ")
+      
+      %{type: :error, message: msg} ->
+        IO.puts("\rERROR: #{msg}")
+        IO.write("#{Process.get(:username, "user")}> ")
+      
+      _ ->
+        IO.puts("\rUnknown message: #{inspect(message)}")
+        IO.write("#{Process.get(:username, "user")}> ")
     end
   end
 
@@ -128,9 +178,15 @@ defmodule Ahoy.UI.App do
   
   defp handle_input(message, username, client_pid) do
     # Regular message to current channel
-    # TODO: Send via client to current channel
-    IO.puts("Sending to channel: #{message}")
-    :continue
+    case Ahoy.Core.Client.send_message(client_pid, message) do
+      :ok ->
+        # Message sent successfully (no need to print, it will come back via Router)
+        :continue
+      
+      {:error, reason} ->
+        IO.puts("Failed to send message: #{inspect(reason)}")
+        :continue
+    end
   end
 
   # Handle incoming messages from Client process
