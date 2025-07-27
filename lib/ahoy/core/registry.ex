@@ -200,6 +200,27 @@ defmodule Ahoy.Core.Registry do
     {:noreply, %{state | users: new_users, channels: new_channels}}
   end
 
+  def handle_info(:request_users, state) do
+    # Manual sync request - broadcast all users to all nodes
+    state.users
+    |> Enum.each(fn {username, user_info} ->
+      broadcast_to_nodes({:user_online, username, user_info.node})
+      
+      # Also send channel memberships
+      user_info.channels
+      |> Enum.each(fn channel ->
+        broadcast_to_nodes({:join_channel, username, channel})
+      end)
+    end)
+    
+    {:noreply, state}
+  end
+
+  def handle_info(msg, state) do
+    Logger.debug("Registry received unknown message: #{inspect(msg)}")
+    {:noreply, state}
+  end
+
   # Private functions
   defp broadcast_to_nodes(message) do
     Node.list()

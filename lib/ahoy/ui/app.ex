@@ -127,6 +127,16 @@ defmodule Ahoy.UI.App do
     :continue
   end
   
+  defp handle_input("/sync", _username, _client_pid) do
+    # Manual registry sync for debugging
+    Node.list()
+    |> Enum.each(fn node ->
+      send({Ahoy.Core.Registry, node}, :request_users)
+    end)
+    IO.puts("Requested user sync from all connected nodes")
+    :continue
+  end
+  
   defp handle_input("/who", _username, _client_pid) do
     users = Ahoy.list_users()
     IO.puts("\nOnline users:")
