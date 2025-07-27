@@ -61,6 +61,7 @@ defmodule Ahoy.Core.Client do
     }
     
     Logger.info("Client started for user: #{username}")
+    IO.puts("Debug - Client registering username: '#{username}'")
     
     {:ok, state}
   end

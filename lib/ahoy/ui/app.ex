@@ -142,7 +142,12 @@ defmodule Ahoy.UI.App do
     IO.puts("\nOnline users:")
     Enum.each(users, fn {username, info} ->
       channels = Enum.join(info.channels, ", ")
-      IO.puts("  #{username}@#{info.node} - channels: [#{channels}]")
+      # Extract hostname from node (e.g., "dev@192.168.0.101" -> "192.168.0.101")
+      node_host = case String.split(to_string(info.node), "@") do
+        [_name, host] -> host
+        _ -> to_string(info.node)
+      end
+      IO.puts("  #{username}@#{node_host} - channels: [#{channels}]")
     end)
     IO.puts("")
     :continue

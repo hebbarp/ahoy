@@ -78,9 +78,10 @@ defmodule Ahoy.CLI do
     System.halt(1)
   end
 
-  defp handle_command({:start, username, _opts}) do
+  defp handle_command({:start, username, opts}) do
     IO.puts("Starting Ahoy for #{username}...")
     IO.puts("Node: #{Node.self()}")
+    IO.puts("Debug - extracted username: '#{username}' from node name: '#{opts[:name]}'")
     
     # Start the OTP application
     case Application.ensure_all_started(:ahoy) do
